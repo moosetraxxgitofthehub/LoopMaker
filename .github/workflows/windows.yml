@@ -1,0 +1,67 @@
+name: Build portable Windows LoopMaker
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: 'x64'
+      - name: Get Windows FFmpeg
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip -OutFile ffmpeg.zip
+          Invoke-WebRequest https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip.sha256 -OutFile ffmpeg.sha256
+          $expected = ((Get-Content ffmpeg.sha256 -Raw).Trim() -split '\s+')[0]
+          $actual = (Get-FileHash ffmpeg.zip -Algorithm SHA256).Hash
+          if ($expected -notmatch '^[a-fA-F0-9]{64}$' -or $actual -ne $expected) { throw 'FFmpeg checksum mismatch' }
+          Expand-Archive ffmpeg.zip ffmpeg-download
+          New-Item tools -ItemType Directory -Force
+          $folder = Get-ChildItem ffmpeg-download -Directory | Select-Object -First 1
+          Copy-Item "$($folder.FullName)/bin/ffmpeg.exe","$($folder.FullName)/bin/ffprobe.exe" tools/
+          New-Item tools/licenses -ItemType Directory -Force
+          Copy-Item "$($folder.FullName)/LICENSE", "$($folder.FullName)/README.txt" tools/licenses/
+      - name: Test processing on Windows
+        shell: pwsh
+        run: |
+          $env:PATH = "$pwd/tools;$env:PATH"
+          python -m unittest discover -s tests -v
+          if ($LASTEXITCODE -ne 0) { throw 'Tests failed' }
+      - name: Package
+        shell: pwsh
+        run: ./build_windows.ps1
+      - name: Check portable ZIP and launch packaged GUI
+        shell: pwsh
+        run: |
+          Expand-Archive LoopMaker-Windows.zip portable-check
+          $app = Join-Path $pwd 'portable-check/LoopMaker'
+          foreach ($file in @('LoopMaker.exe', 'ffmpeg.exe', 'ffprobe.exe', 'README.md', '_internal/python312.dll', '_internal/_tkinter.pyd')) {
+            if (!(Test-Path "$app/$file")) { throw "Portable package missing $file" }
+          }
+          if (!(Test-Path "$app/_internal/_tcl_data") -or !(Test-Path "$app/_internal/_tk_data")) { throw 'Tk runtime missing' }
+          & "$app/ffmpeg.exe" -version
+          if ($LASTEXITCODE -ne 0) { throw 'Bundled FFmpeg failed' }
+          & "$app/ffprobe.exe" -version
+          if ($LASTEXITCODE -ne 0) { throw 'Bundled FFprobe failed' }
+          $process = Start-Process "$app/LoopMaker.exe" -WorkingDirectory $env:TEMP -PassThru
+          try {
+            if ($process.WaitForExit(5000)) { throw 'Packaged GUI exited during launch check' }
+          } finally {
+            if (!$process.HasExited) { Stop-Process -Id $process.Id -Force }
+          }
+          Get-FileHash LoopMaker-Windows.zip -Algorithm SHA256 | Format-List
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LoopMaker-Windows
+          path: LoopMaker-Windows.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
