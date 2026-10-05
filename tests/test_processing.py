@@ -1,4 +1,5 @@
 import hashlib, json, subprocess, sys, tempfile, unittest
+from unittest.mock import patch
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from processing import make_loop, LoopError, tool
@@ -63,6 +64,12 @@ class ProcessingTests(unittest.TestCase):
         second = make_loop(self.source,0.8)
         self.assertNotEqual(first,second)
         self.assertEqual(digest,hashlib.sha256(first.read_bytes()).hexdigest())
+    def test_save_without_hard_link_support(self):
+        with patch('os.link', side_effect=OSError('Hard links unsupported')):
+            output = make_loop(self.source, 0.9)
+        self.assertTrue(output.is_file())
+        self.assertEqual(metadata(output)['streams'][0]['codec_name'], 'h264')
+
     def test_errors(self):
         bad = self.folder/'corrupt.mp4'
         bad.write_text('not a video')
