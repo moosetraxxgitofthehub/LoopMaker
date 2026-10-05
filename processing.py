@@ -1,7 +1,7 @@
 """Local-only FFmpeg processing. No networking or third-party Python dependencies."""
 from pathlib import Path
 from fractions import Fraction
-import json, os, subprocess, sys, tempfile, logging, math
+import json, os, subprocess, sys, tempfile, logging, math, shutil
 
 SPEEDS = tuple(round(i / 10, 1) for i in range(5, 16))
 class LoopError(Exception): pass
@@ -66,14 +66,21 @@ def make_loop(source, speed):
             run([tool('ffmpeg'), '-hide_banner', '-loglevel', 'error', '-nostdin', '-i', str(source),
                  '-filter_complex', graph, '-map', '[out]', '-an', '-c:v', 'libx264', '-preset', 'veryfast',
                  '-crf', '18', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-threads', '2', str(partial)])
-            # Link creates atomically without overwriting a concurrently-created file.
+            # Exclusive creation works on NTFS, exFAT and FAT drives without hard links.
             while True:
                 try:
-                    os.link(partial, output)
-                    break
+                    handle = output.open('xb')
                 except FileExistsError:
                     output = destination / f'{stem}_{index}.mp4'
                     index += 1
+                    continue
+                try:
+                    with handle, partial.open('rb') as rendered:
+                        shutil.copyfileobj(rendered, handle)
+                except OSError:
+                    output.unlink(missing_ok=True)
+                    raise
+                break
         return output
     except OSError as exc:
         logging.exception('Output failure')
