@@ -1,0 +1,13 @@
+test_duplicate_preservation (test_processing.ProcessingTests.test_duplicate_preservation) ... ok
+test_duration_boundary (test_processing.ProcessingTests.test_duration_boundary) ... ok
+test_errors (test_processing.ProcessingTests.test_errors) ... ERROR:root:[mov,mp4,m4a,3gp,3g2,mj2 @ 0x55751dd2d3c0] moov atom not found
+/tmp/LoopMaker test spaces eac9omqa/corrupt.mp4: Invalid data found when processing input
+
+ok
+test_formats (test_processing.ProcessingTests.test_formats) ... ok
+test_speeds_and_frame_order (test_processing.ProcessingTests.test_speeds_and_frame_order) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 2.694s
+
+OK
